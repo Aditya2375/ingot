@@ -357,11 +357,6 @@ static void le_to_limbs(uint64_t out[4], const unsigned char in[32]) {
     }
 }
 
-static void limbs_to_le(unsigned char out[32], const uint64_t in[4]) {
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 8; j++)
-            out[i * 8 + j] = (unsigned char)(in[i] >> (j * 8));
-}
 
 /* S = (r + k * a) mod L, all 32-byte little-endian */
 static void sc_muladd(unsigned char out[32], const unsigned char r[32],

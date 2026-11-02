@@ -2,6 +2,10 @@
 #include "../../src/sha256.h"
 #include "../../src/sha512.h"
 #include "../../src/ed25519.h"
+#include "../../src/base58.h"
+#include "../../src/keys.h"
+#include "../../src/tx.h"
+#include "../../src/block.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,6 +163,169 @@ int main(void) {
         ed25519_sign(big, 1000, sk, pk, sig);
         CHECK(ed25519_verify(big, 1000, pk, sig) == 1, "1 KB message round-trips");
         CHECK(ed25519_verify(big, 999, pk, sig) == 0, "a truncated message fails");
+    }
+
+    /* ---- Base58Check ---- */
+    {
+        char b58[512];
+        unsigned char back[260];
+        /* known vector: 0x00 + 20 zero hash bytes -> the Bitcoin address
+         * for the all-zero hash */
+        unsigned char zero21[21] = {0};
+        size_t n = base58check_encode(zero21, 21, b58, sizeof b58);
+        CHECK(n > 0 && strcmp(b58, "1111111111111111111114oLvT2") == 0,
+              "base58check of the all-zero payload");
+        n = base58check_decode("1111111111111111111114oLvT2", back, sizeof back);
+        CHECK(n == 21 && memcmp(back, zero21, 21) == 0, "base58check round-trips zeros");
+        /* a random-ish payload round-trips */
+        unsigned char pay[25];
+        for (int i = 0; i < 25; i++) pay[i] = (unsigned char)(i * 7 + 3);
+        n = base58check_encode(pay, 25, b58, sizeof b58);
+        CHECK(n > 0, "base58check encodes 25 bytes");
+        n = base58check_decode(b58, back, sizeof back);
+        CHECK(n == 25 && memcmp(back, pay, 25) == 0, "base58check round-trips 25 bytes");
+        /* a corrupted string fails the checksum */
+        b58[5] = b58[5] == 'z' ? 'y' : 'z';
+        CHECK(base58check_decode(b58, back, sizeof back) == 0,
+              "a corrupted base58check string is rejected");
+        CHECK(base58check_decode("0OIl", back, sizeof back) == 0,
+              "non-base58 characters are rejected");
+    }
+
+    /* ---- keys and addresses ---- */
+    {
+        unsigned char seed[32], pk[32], hash[INGOT_ADDR_HASH_LEN];
+        for (int i = 0; i < 32; i++) seed[i] = (unsigned char)(i * 3 + 1);
+        ingot_pubkey(seed, pk);
+        char addr[64];
+        size_t n = ingot_address(pk, addr, sizeof addr);
+        CHECK(n > 0 && addr[0] == 'i', "addresses start with i");
+        CHECK(ingot_address_parse(addr, hash) == 1, "an address parses back");
+        unsigned char want[INGOT_ADDR_HASH_LEN];
+        ingot_addr_hash(pk, want);
+        CHECK(memcmp(hash, want, INGOT_ADDR_HASH_LEN) == 0, "the hash round-trips");
+        CHECK(ingot_address_parse("1111111111111111111114oLvT2", hash) == 0,
+              "a foreign version byte is rejected");
+        addr[n - 2] = addr[n - 2] == 'x' ? 'y' : 'x';
+        CHECK(ingot_address_parse(addr, hash) == 0, "a corrupted address is rejected");
+    }
+
+    /* ---- transactions ---- */
+    {
+        unsigned char seed_a[32], seed_b[32], pk_a[32];
+        for (int i = 0; i < 32; i++) {
+            seed_a[i] = (unsigned char)(i + 9);
+            seed_b[i] = (unsigned char)(i * 5 + 2);
+        }
+        ingot_pubkey(seed_a, pk_a);
+        IngotTx tx;
+        memset(&tx, 0, sizeof tx);
+        tx.n_in = 1;
+        memset(tx.in[0].prev_txid, 7, 32);
+        tx.in[0].index = 3;
+        tx.n_out = 2;
+        tx.out[0].amount = 5 * INGOT_COIN;
+        ingot_addr_hash(pk_a, tx.out[0].addr);
+        tx.out[1].amount = 2500000000ULL;
+        memset(tx.out[1].addr, 9, INGOT_ADDR_HASH_LEN);
+        ingot_tx_sign(&tx, 0, seed_a);
+        CHECK(ingot_tx_input_valid(&tx, 0) == 1, "a signed input validates");
+        /* the same signature under another key does not */
+        unsigned char keep[64], keep_pk[32];
+        memcpy(keep, tx.in[0].sig, 64);
+        memcpy(keep_pk, tx.in[0].pubkey, 32);
+        ingot_tx_sign(&tx, 0, seed_b);
+        CHECK(memcmp(keep, tx.in[0].sig, 64) != 0, "different keys sign differently");
+        memcpy(tx.in[0].sig, keep, 64);
+        memcpy(tx.in[0].pubkey, keep_pk, 32);
+        /* tampering with an output invalidates the input */
+        tx.out[0].amount++;
+        CHECK(ingot_tx_input_valid(&tx, 0) == 0, "a tampered output breaks the signature");
+        tx.out[0].amount--;
+        CHECK(ingot_tx_input_valid(&tx, 0) == 1, "restored output validates again");
+        /* serialization round-trips */
+        unsigned char buf[4096];
+        size_t n = ingot_tx_serialize(&tx, 1, buf, sizeof buf);
+        IngotTx back;
+        CHECK(n > 0 && ingot_tx_parse(buf, n, &back) == n, "a transaction round-trips");
+        CHECK(back.n_in == 1 && back.n_out == 2 &&
+              back.out[1].amount == 2500000000ULL &&
+              memcmp(back.in[0].sig, tx.in[0].sig, 64) == 0,
+              "the parsed transaction matches");
+        unsigned char id1[32], id2[32];
+        ingot_txid(&tx, id1);
+        ingot_txid(&back, id2);
+        CHECK(memcmp(id1, id2, 32) == 0, "txid survives a round-trip");
+        /* the txid commits to the signature: a different sig, different id */
+        back.in[0].sig[0] ^= 1;
+        ingot_txid(&back, id2);
+        CHECK(memcmp(id1, id2, 32) != 0, "the txid commits to signatures");
+        /* truncated parses fail */
+        CHECK(ingot_tx_parse(buf, n - 1, &back) == 0, "a truncated transaction fails");
+    }
+
+    /* ---- blocks, targets, merkle ---- */
+    {
+        unsigned char target[32];
+        ingot_bits_to_target(0x1d00ffff, target);
+        CHECK(target[0] == 0 && target[3] == 0 && target[4] == 0xff &&
+              target[5] == 0xff, "compact bits lay the mantissa out big-endian");
+        uint32_t bits = ingot_target_to_bits(target);
+        CHECK(bits == 0x1d00ffff, "compact bits round-trip");
+        /* harder target, lower work estimate ordering */
+        unsigned __int128 w_easy, w_hard;
+        ingot_bits_work(0x1d00ffff, &w_easy);
+        ingot_bits_to_target(0x1c00ffff, target);
+        bits = ingot_target_to_bits(target);
+        CHECK(bits == 0x1c00ffff, "a smaller exponent round-trips");
+        ingot_bits_work(0x1c00ffff, &w_hard);
+        CHECK(w_hard > w_easy, "a smaller target is more work");
+        /* hash comparison is big-endian numeric */
+        unsigned char h[32], t2[32];
+        memset(h, 0x00, 32); h[31] = 5;
+        memset(t2, 0x00, 32); t2[31] = 6;
+        CHECK(ingot_hash_meets(h, t2) == 1, "a smaller hash meets the target");
+        CHECK(ingot_hash_meets(t2, h) == 0, "a larger hash does not");
+
+        /* a tiny mined block passes its own PoW and round-trips */
+        IngotBlock b;
+        memset(&b, 0, sizeof b);
+        b.h.version = 1;
+        b.h.time = 1700000000;
+        b.h.bits = 0x207fffff;   /* comically easy: target with top byte 0x7f */
+        b.n_tx = 1;
+        b.tx[0].coinbase = 1;
+        b.tx[0].n_in = 1;
+        b.tx[0].n_out = 1;
+        b.tx[0].out[0].amount = 50 * INGOT_COIN;
+        memset(b.tx[0].out[0].addr, 3, INGOT_ADDR_HASH_LEN);
+        ingot_merkle(&b, b.h.merkle);
+        unsigned char hash[32];
+        int mined = 0;
+        for (uint64_t nonce = 0; nonce < 5000000 && !mined; nonce++) {
+            b.h.nonce = (uint32_t)nonce;
+            ingot_block_hash(&b, hash);
+            ingot_bits_to_target(b.h.bits, t2);
+            if (ingot_hash_meets(hash, t2))
+                mined = 1;
+        }
+        CHECK(mined, "the easy block mines within the nonce budget");
+        CHECK(ingot_block_pow_valid(&b) == 1, "the mined block passes PoW");
+        b.h.merkle[0] ^= 1;
+        CHECK(ingot_block_pow_valid(&b) == 0, "a wrong merkle root fails");
+        ingot_merkle(&b, b.h.merkle);
+        static unsigned char wbuf[INGOT_MAX_BLOCK_SIZE];
+        size_t n = ingot_block_serialize(&b, wbuf, sizeof wbuf);
+        IngotBlock back;
+        CHECK(n > 0 && ingot_block_parse(wbuf, n, &back) == n, "a block round-trips");
+        unsigned char id1[32], id2[32];
+        ingot_block_hash(&b, id1);
+        ingot_block_hash(&back, id2);
+        CHECK(memcmp(id1, id2, 32) == 0, "the block hash survives parsing");
+        /* merkle commits to every transaction */
+        back.tx[0].out[0].amount++;
+        ingot_merkle(&back, id2);
+        CHECK(memcmp(id1, id2, 32) != 0, "a tampered tx changes the merkle root");
     }
 
     printf("%d checks passed\n", checks);
