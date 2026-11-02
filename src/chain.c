@@ -463,7 +463,9 @@ IngotErr ingot_chain_add(IngotChain *c, const IngotBlock *b) {
     memcpy(n->hash, hash, 32);
     n->parent = pi;
     c->nodes[c->n_nodes++] = n;
-    if (pi < 0) {
+    if (pi < 0 || c->nodes[pi]->orphan) {
+        /* a child of an orphan is an orphan too: never let connect_node
+         * compute heights and work from an orphan's zeroed fields */
         n->orphan = 1;
         return INGOT_ERR_ORPHAN;
     }
