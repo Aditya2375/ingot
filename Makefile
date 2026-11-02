@@ -5,7 +5,7 @@ CFLAGS  ?= -std=gnu11 -O2 -g
 WARN    := -Wall -Wextra -Werror -Isrc
 EXTRA   ?=
 
-CORE    := src/sha256.c src/sha512.c src/ed25519.c src/base58.c src/keys.c src/tx.c src/block.c src/chain.c
+CORE    := src/sha256.c src/sha512.c src/ed25519.c src/base58.c src/keys.c src/tx.c src/block.c src/chain.c src/miner.c
 
 all: build/test-unit
 
