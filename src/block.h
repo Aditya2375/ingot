@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include "tx.h"
 
-#define INGOT_MAX_BLOCK_TXS 256
+#define INGOT_MAX_BLOCK_TXS 32
 #define INGOT_HEADER_SIZE (4 + 32 + 32 + 4 + 4 + 4)
 
 typedef struct {

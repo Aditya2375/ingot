@@ -6,6 +6,9 @@
 #include "../../src/keys.h"
 #include "../../src/tx.h"
 #include "../../src/block.h"
+#include "../../src/chain.h"
+#include "../../src/ed25519.h"
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +30,37 @@ static void hex(const unsigned char *b, size_t n, char *out) {
         out[i * 2 + 1] = h[b[i] & 15];
     }
     out[n * 2] = '\0';
+}
+
+/* grind a coinbase-only block paying cb_addr; callers may append
+ * transactions afterwards (before grinding) */
+static void mkblock(IngotBlock *b, uint32_t height, const unsigned char prev[32],
+                    const unsigned char cb_addr[INGOT_ADDR_HASH_LEN],
+                    uint64_t cb_amount, uint32_t time) {
+    memset(b, 0, sizeof *b);
+    b->h.version = 1;
+    memcpy(b->h.prev, prev, 32);
+    b->h.time = time;
+    b->h.bits = INGOT_BITS_START;
+    b->n_tx = 1;
+    b->tx[0].coinbase = 1;
+    b->tx[0].n_in = 1;
+    b->tx[0].in[0].index = height;
+    b->tx[0].n_out = 1;
+    b->tx[0].out[0].amount = cb_amount;
+    memcpy(b->tx[0].out[0].addr, cb_addr, INGOT_ADDR_HASH_LEN);
+}
+
+static void grind(IngotBlock *b) {
+    unsigned char h[32], t[32];
+    ingot_merkle(b, b->h.merkle);
+    ingot_bits_to_target(b->h.bits, t);
+    for (uint32_t n = 0;; n++) {
+        b->h.nonce = n;
+        ingot_block_hash(b, h);
+        if (ingot_hash_meets(h, t))
+            break;
+    }
 }
 
 int main(void) {
@@ -326,6 +360,143 @@ int main(void) {
         back.tx[0].out[0].amount++;
         ingot_merkle(&back, id2);
         CHECK(memcmp(id1, id2, 32) != 0, "a tampered tx changes the merkle root");
+    }
+
+    /* ---- chain: mining, spends, forks, reorgs, orphans ---- */
+    {
+        IngotChain *c = malloc(sizeof *c);
+        ingot_chain_init(c);
+        CHECK(ingot_chain_height(c) == 0, "a new chain starts at the genesis block");
+        unsigned char zero[INGOT_ADDR_HASH_LEN] = {0};
+        CHECK(ingot_chain_balance(c, zero) == 50 * INGOT_COIN,
+              "the genesis subsidy lands on the zero address");
+        CHECK(ingot_chain_next_bits(c) == INGOT_BITS_START,
+              "early blocks inherit the start difficulty");
+
+        unsigned char wseed[32], wpk[32], waddr[INGOT_ADDR_HASH_LEN];
+        memset(wseed, 7, 32);
+        ed25519_publickey(wseed, wpk);
+        ingot_addr_hash(wpk, waddr);
+        unsigned char baddr[INGOT_ADDR_HASH_LEN];
+        memset(baddr, 3, INGOT_ADDR_HASH_LEN);
+
+        uint32_t t = ingot_chain_tip(c)->b.h.time;
+        IngotBlock b1, b2, b3;
+        mkblock(&b1, 1, ingot_chain_tip(c)->hash, waddr, ingot_subsidy(1), ++t);
+        grind(&b1);
+        CHECK(ingot_chain_add(c, &b1) == INGOT_OK, "block 1 connects");
+        CHECK(ingot_chain_balance(c, waddr) == 50 * INGOT_COIN, "the miner is paid");
+        unsigned char h1[32];
+        ingot_block_hash(&b1, h1);
+
+        mkblock(&b2, 2, h1, waddr, ingot_subsidy(2), ++t);
+        grind(&b2);
+        CHECK(ingot_chain_add(c, &b2) == INGOT_OK, "block 2 connects");
+        unsigned char cb2[32];
+        ingot_txid(&b2.tx[0], cb2);
+
+        /* W spends block 1's coinbase: 10 to B, 40 back, zero fee */
+        unsigned char cb1[32];
+        ingot_txid(&b1.tx[0], cb1);
+        IngotTx tx;
+        memset(&tx, 0, sizeof tx);
+        tx.n_in = 1;
+        tx.n_out = 2;
+        memcpy(tx.in[0].prev_txid, cb1, 32);
+        tx.out[0].amount = 10 * INGOT_COIN;
+        memcpy(tx.out[0].addr, baddr, INGOT_ADDR_HASH_LEN);
+        tx.out[1].amount = 40 * INGOT_COIN;
+        memcpy(tx.out[1].addr, waddr, INGOT_ADDR_HASH_LEN);
+        ingot_tx_sign(&tx, 0, wseed);
+        CHECK(ingot_mempool_add(c, &tx) == INGOT_OK, "a signed spend enters the mempool");
+
+        IngotTx dbl = tx;
+        CHECK(ingot_mempool_add(c, &dbl) == INGOT_ERR_CONFLICT,
+              "the same spend twice conflicts in the mempool");
+
+        /* sign a spend of block 2's coinbase, then tamper with it */
+        IngotTx bad;
+        memset(&bad, 0, sizeof bad);
+        bad.n_in = 1;
+        bad.n_out = 1;
+        memcpy(bad.in[0].prev_txid, cb2, 32);
+        bad.out[0].amount = 1 * INGOT_COIN;
+        memcpy(bad.out[0].addr, baddr, INGOT_ADDR_HASH_LEN);
+        ingot_tx_sign(&bad, 0, wseed);
+        bad.out[0].amount++;
+        CHECK(ingot_mempool_add(c, &bad) == INGOT_ERR_SIG, "a tampered spend is rejected");
+
+        mkblock(&b3, 3, ingot_chain_tip(c)->hash, waddr, ingot_subsidy(3), ++t);
+        b3.tx[1] = tx;
+        b3.n_tx = 2;
+        grind(&b3);
+        CHECK(ingot_chain_add(c, &b3) == INGOT_OK, "a block carrying the spend connects");
+        CHECK(ingot_chain_balance(c, baddr) == 10 * INGOT_COIN, "the recipient is paid");
+        CHECK(ingot_chain_balance(c, waddr) == 140 * INGOT_COIN,
+              "change, new subsidy and old subsidy add up");
+        CHECK(ingot_mempool_size(c) == 0, "a mined transaction leaves the mempool");
+        CHECK(ingot_mempool_add(c, &tx) == INGOT_ERR_DBLSPEND,
+              "replaying a mined spend is a double-spend");
+
+        /* a coinbase that overpays is rejected at the block level */
+        IngotBlock greedy;
+        mkblock(&greedy, 4, ingot_chain_tip(c)->hash, waddr,
+                ingot_subsidy(4) + INGOT_COIN, ++t);
+        grind(&greedy);
+        CHECK(ingot_chain_add(c, &greedy) == INGOT_ERR_COINBASE,
+              "an overpaying coinbase is rejected");
+        CHECK(ingot_chain_height(c) == 3, "a rejected block does not move the tip");
+
+        /* a fork from block 1 that overtakes the main chain */
+        unsigned char faddr[INGOT_ADDR_HASH_LEN];
+        memset(faddr, 9, INGOT_ADDR_HASH_LEN);
+        uint32_t tf = b1.h.time;
+        IngotBlock f2, f3, f4;
+        mkblock(&f2, 2, h1, faddr, ingot_subsidy(2), ++tf);
+        grind(&f2);
+        CHECK(ingot_chain_add(c, &f2) == INGOT_OK && ingot_chain_height(c) == 3,
+              "a shorter fork is stored but does not reorganize");
+        unsigned char hf2[32];
+        ingot_block_hash(&f2, hf2);
+        mkblock(&f3, 3, hf2, faddr, ingot_subsidy(3), ++tf);
+        grind(&f3);
+        CHECK(ingot_chain_add(c, &f3) == INGOT_OK && ingot_chain_height(c) == 3,
+              "equal work does not reorganize");
+        unsigned char hf3[32];
+        ingot_block_hash(&f3, hf3);
+        mkblock(&f4, 4, hf3, faddr, ingot_subsidy(4), ++tf);
+        grind(&f4);
+        CHECK(ingot_chain_add(c, &f4) == INGOT_OK, "the heavier fork block is accepted");
+        CHECK(ingot_chain_height(c) == 4, "the heavier fork reorganizes the chain");
+        unsigned char hf4[32], htip[32];
+        ingot_block_hash(&f4, hf4);
+        memcpy(htip, ingot_chain_tip(c)->hash, 32);
+        CHECK(memcmp(hf4, htip, 32) == 0, "the tip is the fork block");
+        CHECK(ingot_chain_balance(c, faddr) == 150 * INGOT_COIN,
+              "fork coinbases are spendable after the reorg");
+        CHECK(ingot_chain_balance(c, waddr) == 50 * INGOT_COIN,
+              "the reorg unspends the abandoned blocks");
+        CHECK(ingot_chain_balance(c, baddr) == 0,
+              "the reorg undoes the payment on the abandoned branch");
+
+        /* orphans: a child arriving before its parent waits, then connects */
+        IngotBlock o5, o6;
+        mkblock(&o5, 5, htip, faddr, ingot_subsidy(5), ++tf);
+        grind(&o5);
+        unsigned char ho5[32];
+        ingot_block_hash(&o5, ho5);
+        mkblock(&o6, 6, ho5, faddr, ingot_subsidy(6), ++tf);
+        grind(&o6);
+        CHECK(ingot_chain_add(c, &o6) == INGOT_ERR_ORPHAN, "a child without its parent is an orphan");
+        CHECK(ingot_chain_height(c) == 4, "an orphan does not move the tip");
+        CHECK(ingot_chain_add(c, &o5) == INGOT_OK, "the missing parent connects");
+        CHECK(ingot_chain_height(c) == 6, "the orphan follows its parent in");
+        CHECK(ingot_chain_balance(c, faddr) == 250 * INGOT_COIN, "coinbases keep stacking");
+
+        CHECK(ingot_chain_add(c, &o6) == INGOT_ERR_DUP, "the same block twice is a duplicate");
+
+        ingot_chain_free(c);
+        free(c);
     }
 
     printf("%d checks passed\n", checks);

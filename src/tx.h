@@ -11,8 +11,8 @@
 #include <stdint.h>
 #include "keys.h"
 
-#define INGOT_MAX_TX_IN 32
-#define INGOT_MAX_TX_OUT 32
+#define INGOT_MAX_TX_IN 8
+#define INGOT_MAX_TX_OUT 8
 #define INGOT_COIN 100000000ULL   /* base units per coin */
 
 typedef struct {
