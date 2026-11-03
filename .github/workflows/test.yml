@@ -48,7 +48,7 @@ jobs:
         # committed artifact: the build must regenerate it wholesale
         run: |
           rm -rf docs/
-          git checkout -- docs/index.html docs/app.js
+          git checkout -- docs/index.html docs/app.js docs/404.html docs/robots.txt docs/sitemap.xml docs/llms.txt
           sh wasm/build.sh
       - run: node tests/wasm-smoke.js
       - name: committed demo matches a fresh build
