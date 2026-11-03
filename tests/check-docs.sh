@@ -10,7 +10,7 @@ UNIT=$(./build/test-unit | tail -1 | grep -o '^[0-9]*')
 grep -q "83 unit checks" README.md || fail "README no longer says 83 unit checks"
 
 grep -q "6 integration checks" README.md || fail "README no longer says 6 integration checks"
-N=$(grep -c '^ok ' tests/wasm-smoke.js)
+N=$(grep -c '^    ok(' tests/wasm-smoke.js)
 [ "$N" = "11" ] || fail "wasm smoke has $N checks, expected 11"
 
 for pin in "INGOT_MAX_BLOCKS    2048" "INGOT_UTXO_SLOTS    16384" \
@@ -29,6 +29,6 @@ grep -q "not constant-time" README.md || fail "README lost the crypto caveat"
 grep -q "version byte" README.md || fail "README lost the address-format note"
 
 # no stray AI/tooling mentions anywhere public-facing
-! grep -ri "claude\|anthropic\|openai\|chatgpt\|copilot" README.md docs/ src/ wasm/ tests/ \
+! grep -ri --exclude=check-docs.sh "claude\|anthropic\|openai\|chatgpt\|copilot" README.md docs/ src/ wasm/ tests/ \
   || fail "tooling mention found"
 echo "check-docs ok"
