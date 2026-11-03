@@ -4,25 +4,25 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: make build/test-unit
       - run: ./build/test-unit
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: make && sh tests/run-tests.sh && sh tests/check-docs.sh
   sanitize:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: make sanitize
       - name: prove the sanitized binary really carries ASan
         run: nm build/test-unit | grep -q __asan_init || { echo "sanitized build/test-unit has no ASan symbols"; exit 1; }
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: make build/test-fuzz
       - name: mutated + random blobs (several seeds)
         run: |
@@ -39,7 +39,7 @@ jobs:
   wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021   # v14
         with:
           version: 6.0.13
@@ -48,7 +48,7 @@ jobs:
         # committed artifact: the build must regenerate it wholesale
         run: |
           rm -rf docs/
-          git checkout -- docs/index.html docs/app.js docs/404.html docs/robots.txt docs/sitemap.xml docs/llms.txt
+          git checkout -- docs/index.html docs/app.js docs/404.html docs/robots.txt docs/sitemap.xml docs/llms.txt docs/ingot.wasm
           sh wasm/build.sh
       - run: node tests/wasm-smoke.js
       - name: committed demo matches a fresh build
