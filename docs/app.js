@@ -10,6 +10,7 @@
     if (cls) d.className = cls;
     d.textContent = msg;
     logEl.appendChild(d);
+    while (logEl.children.length > 100) logEl.firstElementChild.remove();
     logEl.scrollTop = logEl.scrollHeight;
   }
 
@@ -60,7 +61,9 @@
 
   function send(n) {
     const L = n ? "B" : "A";
-    const amt = parseFloat($(n ? "amtB" : "amtA").value);
+    const input = $(n ? "amtB" : "amtA");
+    const amt = Number(input.value);
+    if (!input.checkValidity() || !input.value || !Number.isFinite(amt) || amt <= 0 || amt > 1000000) { log("Use an amount from 1 to 1,000,000 demo coins.", "bad"); return; }
     const r = JSON.parse(M.ccall("w_send", "string", ["number", "number", "number"], [n, 1 - n, amt]));
     if (r.ok) {
       log(L + " signs " + amt + " INGOT to " + (n ? "A" : "B") + " (tx " + r.txid.slice(0, 16) + "..., in mempool)", "ok");
@@ -77,7 +80,7 @@
     if (s.height < 1) { log("nothing to forge yet - mine a few blocks first", "dim"); return; }
     const h = Math.max(1, s.height - 2);
     const r = JSON.parse(M.ccall("w_tamper", "string", ["number", "number"], [n, h]));
-    log("forgery attempt on block " + h + " (coinbase +10): rejected - " + r.err, "bad");
+    log("forgery attempt on block " + h + " (coinbase +10): " + (r.err === "ok" ? "unexpectedly accepted" : "rejected - " + r.err), "bad");
     render();
   }
 
@@ -91,7 +94,7 @@
     M = m;
     const s0 = (crypto.getRandomValues(new Uint32Array(1))[0]) || 1;
     const s1 = (crypto.getRandomValues(new Uint32Array(1))[0]) || 2;
-    M.ccall("w_init", "number", ["number", "number"], [s0, s1]);
+    if (M.ccall("w_init", "number", ["number", "number"], [s0, s1]) !== 0) throw new Error("Could not allocate demo nodes.");
     $("addrA").textContent = M.ccall("w_address", "string", ["number"], [0]);
     $("addrB").textContent = M.ccall("w_address", "string", ["number"], [1]);
     document.querySelectorAll("[data-mine]").forEach((b) =>
@@ -104,5 +107,9 @@
     $("net").textContent = "ready - both nodes booted from the same genesis";
     log("two nodes booted from the same genesis block", "dim");
     render();
+    document.querySelectorAll("button").forEach(b => b.disabled = false);
+  }).catch(() => {
+    $("net").textContent = "Demo unavailable. Reload to try loading the local WebAssembly build again.";
+    log("The demo could not start. No coins or wallets have real value.", "bad");
   });
 })();
