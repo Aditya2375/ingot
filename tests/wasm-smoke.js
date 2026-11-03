@@ -13,6 +13,8 @@ factory().then(m => {
     const addr = (n) => m.ccall("w_address", "string", ["number"], [n]);
 
     m.ccall("w_init", "number", ["number", "number"], [111, 222]);
+    ok(!J("send", 0, 1, NaN).ok && !J("send", 0, 1, Infinity).ok && !J("send", 0, 1, -1).ok && !J("send", 0, 1, 1000001).ok, "nonfinite, negative and oversized demo amounts rejected");
+    ok(!J("send", -1, 1, 10).ok && !J("state", 2).ok, "invalid demo node indices rejected");
     const a = addr(0), b = addr(1);
     ok(a[0] === "i" && b[0] === "i" && a !== b, "both wallets boot with i-addresses");
 
@@ -22,6 +24,7 @@ factory().then(m => {
     ok(J("mine", 0).ok, "A mines the spend");
     const sy = J("sync");
     ok(sy.a === 3 && sy.b === 3 && sy.moved === 3, "sync delivers A's chain to B");
+    ok(!sy.reorg, "ordinary chain extension is not called a reorg");
     const st = J("state", 1);
     ok(Math.abs(st.balance - 10) < 1e-9, "B sees its 10 coins after the sync");
     ok(st.mempool === 0, "the mined spend left both mempools");
@@ -30,6 +33,7 @@ factory().then(m => {
     ok(!t.ok && /proof of work|merkle|coinbase/.test(t.err),
        "a forged old block is rejected: " + t.err);
 
+    ok(J("mine", 0).ok, "A privately mines its own divergent fourth block");
     ok(J("mine", 1).ok && J("mine", 1).ok && J("mine", 1).ok && J("mine", 1).ok,
        "B privately mines four blocks");
     const re = J("sync");
