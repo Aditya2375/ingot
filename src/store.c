@@ -65,6 +65,6 @@ int ingot_store_append(const char *path, const IngotBlock *b) {
     memcpy(hdr, &magic, 4);
     memcpy(hdr + 4, &l32, 4);
     int ok = fwrite(hdr, 1, 8, f) == 8 && fwrite(buf, 1, len, f) == len;
-    fclose(f);
+    if (fclose(f) != 0) ok = 0;
     return ok ? 0 : -1;
 }
