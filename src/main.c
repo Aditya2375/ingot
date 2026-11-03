@@ -91,6 +91,7 @@ static int parse_amount(const char *s, uint64_t *out) {
             scale *= 10;
         }
     }
+    if (whole > (UINT64_MAX - frac) / INGOT_COIN) return -1;
     *out = whole * INGOT_COIN + frac;
     return *out > 0 ? 0 : -1;
 }
@@ -213,7 +214,10 @@ static int cmd_mine(int count) {
             fprintf(stderr, "block rejected: %s\n", ingot_err_str(e));
             break;
         }
-        ingot_store_append(store_path, b);
+        if (ingot_store_append(store_path, b) != 0) {
+            fprintf(stderr, "could not persist mined block; stopping\n");
+            free(b); chain_unload(c); return 1;
+        }
         mined++;
     }
     printf("mined %d block%s, height %d\n", mined, mined == 1 ? "" : "s",
