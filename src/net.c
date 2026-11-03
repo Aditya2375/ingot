@@ -49,7 +49,13 @@ static int peer_send(IngotNet *n, IngotPeer *p, uint8_t type,
     if (len)
         memcpy(w + HDR, payload, len);
     p->wlen = need;
-    (void)n;
+    /* Queueing is not sending: arm EPOLLOUT now. Broadcasts from the
+     * mining path happen on turns where this peer has no event, so
+     * waiting for its next event to arm would park the bytes forever. */
+    struct epoll_event ev = {0};
+    ev.events = EPOLLIN | EPOLLOUT;
+    ev.data.ptr = p;
+    epoll_ctl(n->epfd, EPOLL_CTL_MOD, p->fd, &ev);
     return 0;
 }
 
@@ -62,6 +68,7 @@ static void broadcast(IngotNet *n, int skip, uint8_t type, const void *pl, uint3
 static void peer_drop(IngotNet *n, int i) {
     IngotPeer *p = &n->peers[i];
     if (p->fd >= 0) {
+        fprintf(stderr, "[net] peer %d dropped\n", i);
         epoll_ctl(n->epfd, EPOLL_CTL_DEL, p->fd, NULL);
         close(p->fd);
     }
@@ -133,8 +140,9 @@ static void handle_msg(IngotNet *n, int pi, uint8_t type,
             break;
         }
         IngotErr e = ingot_chain_add(n->chain, b);
-        if (getenv("INGOT_DEBUG"))
-            fprintf(stderr, "[net] block add -> %s (height %d)\n", ingot_err_str(e), ingot_chain_height(n->chain));
+        if (e != INGOT_OK && e != INGOT_ERR_DUP)
+            fprintf(stderr, "[net] block from peer %d: %s (tip %d)\n",
+                    pi, ingot_err_str(e), ingot_chain_height(n->chain));
         if (e == INGOT_OK) {
             ingot_store_append(n->store_path, b);
             broadcast(n, pi, MSG_BLOCK, pl, len);
@@ -153,9 +161,16 @@ static void handle_msg(IngotNet *n, int pi, uint8_t type,
     case MSG_TX: {
         IngotTx *tx = malloc(sizeof *tx);
         if (!tx) break;
-        if (ingot_tx_parse(pl, len, tx) == len &&
-            ingot_mempool_add(n->chain, tx) == INGOT_OK)
-            broadcast(n, pi, MSG_TX, pl, len);
+        if (ingot_tx_parse(pl, len, tx) == len) {
+            IngotErr e = ingot_mempool_add(n->chain, tx);
+            if (e == INGOT_OK) {
+                fprintf(stderr, "[net] tx accepted from peer %d (mempool %d)\n",
+                        pi, n->chain->n_mempool);
+                broadcast(n, pi, MSG_TX, pl, len);
+            } else {
+                fprintf(stderr, "[net] tx from peer %d rejected: %s\n", pi, ingot_err_str(e));
+            }
+        }
         free(tx);
         break;
     }
@@ -357,7 +372,9 @@ void ingot_net_run(IngotNet *n) {
                 peer_arm(n, &n->peers[idx]);
         }
         if (n->mine_addr) {
-            if (!have_tmpl) {
+            if (!have_tmpl || tmpl->n_tx - 1 != n->chain->n_mempool) {
+                /* fresh tip, or the mempool gained a transaction worth
+                 * including */
                 ingot_miner_template(n->chain, n->mine_addr, tmpl);
                 have_tmpl = 1;
             }
@@ -368,6 +385,8 @@ void ingot_net_run(IngotNet *n) {
             if (tmpl->h.time <= wall_now() &&
                 ingot_miner_grind(tmpl, n->mine_tries, wall_now)) {
                 if (ingot_chain_add(n->chain, tmpl) == INGOT_OK) {
+                    fprintf(stderr, "[mine] block %d (%d tx)\n",
+                            ingot_chain_height(n->chain), tmpl->n_tx);
                     ingot_store_append(n->store_path, tmpl);
                     static unsigned char buf[INGOT_MAX_BLOCK_SIZE];
                     size_t len = ingot_block_serialize(tmpl, buf, sizeof buf);
@@ -377,10 +396,12 @@ void ingot_net_run(IngotNet *n) {
                 have_tmpl = 0;
             }
             /* a new tip from the network invalidates the template */
-            unsigned char th[32];
-            memcpy(th, ingot_chain_tip(n->chain)->hash, 32);
-            if (memcmp(tmpl->h.prev, th, 32) != 0)
-                have_tmpl = 0;
+            if (have_tmpl) {
+                unsigned char th[32];
+                memcpy(th, ingot_chain_tip(n->chain)->hash, 32);
+                if (memcmp(tmpl->h.prev, th, 32) != 0)
+                    have_tmpl = 0;
+            }
         }
     }
     free(tmpl);
