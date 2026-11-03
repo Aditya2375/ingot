@@ -11,7 +11,7 @@ grep -q "85 unit checks" README.md || fail "README no longer says 85 unit checks
 
 grep -q "7 integration checks" README.md || fail "README no longer says 6 integration checks"
 N=$(grep -c '^    ok(' tests/wasm-smoke.js)
-[ "$N" = "11" ] || fail "wasm smoke has $N checks, expected 11"
+[ "$N" = "15" ] || fail "wasm smoke has $N checks, expected 15"
 
 for pin in "INGOT_MAX_BLOCKS    2048" "INGOT_UTXO_SLOTS    16384" \
            "INGOT_MAX_MEMPOOL   256" "INGOT_MAX_BLOCK_TXS 32" \
