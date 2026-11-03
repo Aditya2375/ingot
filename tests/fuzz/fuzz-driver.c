@@ -9,7 +9,7 @@
 #include <string.h>
 
 int main(void) {
-    static unsigned char buf[16384];
+    static unsigned char buf[INGOT_MAX_BLOCK_SIZE];   /* cover the largest legal block */
     size_t n = fread(buf, 1, sizeof buf, stdin);
     if (n == 0)
         return 0;
