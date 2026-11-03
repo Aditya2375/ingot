@@ -19,6 +19,7 @@ static void store_new_blocks(IngotNet *n) {
     for (int i = 0; i < k; i++)
         if (ingot_store_append(n->store_path, &pend[i]->b) == 0)
             pend[i]->stored = 1;
+        else fprintf(stderr, "[store] append failed; block remains unpersisted\n");
 }
 
 #define NET_MAGIC 0x54474e49u
@@ -364,6 +365,7 @@ static uint32_t wall_now(void) {
 void ingot_net_run(IngotNet *n) {
     n->running = 1;
     IngotBlock *tmpl = malloc(sizeof *tmpl);
+    if (!tmpl) { fprintf(stderr, "[net] no memory for mining template\n"); return; }
     int have_tmpl = 0;
     while (n->running) {
         struct epoll_event evs[16];
