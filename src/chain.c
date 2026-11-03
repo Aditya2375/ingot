@@ -189,18 +189,24 @@ static IngotErr validate_txs(IngotChain *c, const IngotBlock *b, uint32_t height
         if (b->tx[i].coinbase)
             return INGOT_ERR_COINBASE;
     uint64_t fees = 0;
+    /* an outpoint may be spent once per block, across the whole block:
+     * checking each transaction against the pre-block UTXO set alone
+     * would let two transactions in the same block spend it twice */
+    unsigned char spent[INGOT_MAX_BLOCK_TXS * INGOT_MAX_TX_IN][36];
+    int n_spent = 0;
     for (int i = 1; i < b->n_tx; i++) {
         const IngotTx *tx = &b->tx[i];
         if (tx->n_in < 1 || tx->n_out < 1)
             return INGOT_ERR_TX;
         uint64_t in_sum = 0, out_sum = 0;
-        unsigned char spent[INGOT_MAX_TX_IN][36];
         for (int j = 0; j < tx->n_in; j++) {
             const IngotTxIn *in = &tx->in[j];
-            utxo_make_key(spent[j], in->prev_txid, in->index);
-            for (int k = 0; k < j; k++)
-                if (memcmp(spent[k], spent[j], 36) == 0)
-                    return INGOT_ERR_DBLSPEND;   /* same input twice in one tx */
+            unsigned char key[36];
+            utxo_make_key(key, in->prev_txid, in->index);
+            for (int k = 0; k < n_spent; k++)
+                if (memcmp(spent[k], key, 36) == 0)
+                    return INGOT_ERR_DBLSPEND;   /* spent twice in one block */
+            memcpy(spent[n_spent++], key, 36);
             const IngotUtxo *u = ingot_chain_utxo(c, in->prev_txid, in->index);
             if (!u)
                 return INGOT_ERR_DBLSPEND;       /* unknown or already spent */
@@ -479,6 +485,21 @@ IngotErr ingot_chain_add(IngotChain *c, const IngotBlock *b) {
     return e;
 }
 
+static int node_height_cmp(const void *a, const void *b) {
+    const IngotNode *na = *(const IngotNode *const *)a;
+    const IngotNode *nb = *(const IngotNode *const *)b;
+    return na->height < nb->height ? -1 : na->height > nb->height;
+}
+
+int ingot_chain_pending_store(IngotChain *c, IngotNode **out, int max) {
+    int k = 0;
+    for (int i = 0; i < c->n_nodes && k < max; i++)
+        if (!c->nodes[i]->orphan && !c->nodes[i]->invalid && !c->nodes[i]->stored)
+            out[k++] = c->nodes[i];
+    qsort(out, (size_t)k, sizeof *out, node_height_cmp);
+    return k;
+}
+
 /* ---------- genesis ---------- */
 
 void ingot_chain_init(IngotChain *c) {
@@ -508,6 +529,7 @@ void ingot_chain_init(IngotChain *c) {
     ingot_bits_work(g->h.bits, &n->work);
     n->parent = -1;
     n->main = 1;
+    n->stored = 1;   /* synthesized at load, never read from the file */
     c->nodes[0] = n;
     c->n_nodes = 1;
     c->tip = 0;

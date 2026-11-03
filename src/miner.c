@@ -18,8 +18,10 @@ void ingot_miner_template(IngotChain *c, const unsigned char cb_addr[INGOT_ADDR_
     out->h.bits = ingot_chain_next_bits(c);
     out->h.time = ingot_chain_tip(c)->b.h.time + 1;   /* monotonic; grind bumps it */
 
-    /* mempool, highest fee first */
-    IngotMempoolEntry pool[INGOT_MAX_MEMPOOL];
+    /* mempool, highest fee first. Static: 256 transactions would be a
+     * third of a megabyte of stack, which the wasm build cannot spare;
+     * callers are single-threaded. */
+    static IngotMempoolEntry pool[INGOT_MAX_MEMPOOL];
     int n = c->n_mempool;
     memcpy(pool, c->mempool, sizeof(IngotMempoolEntry) * (size_t)n);
     qsort(pool, (size_t)n, sizeof *pool, fee_cmp);

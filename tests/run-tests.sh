@@ -52,4 +52,22 @@ sleep 0.2
 OUT=$(HOME=$T/a $BIN balance)
 case $OUT in *INGOT*) ok "store replays after restart ($OUT)";; *) die "replay: $OUT";; esac
 
+# --- fork resolution: divergent chains reorg over TCP ---
+HOME=$T/fa $BIN wallet new >/dev/null
+HOME=$T/fb $BIN wallet new >/dev/null
+HOME=$T/fa $BIN mine 3 >/dev/null
+HOME=$T/fb $BIN mine 5 >/dev/null
+
+HOME=$T/fa $BIN node --port 9521 >$T/forkA.log 2>&1 &
+sleep 1
+HOME=$T/fb $BIN node --port 9522 --peer 127.0.0.1:9521 >$T/forkB.log 2>&1 &
+sleep 3
+
+OUT=$(HOME=$T/fa $BIN balance)
+case $OUT in *"(height 5)"*) ;; *) die "heavier fork did not resolve over TCP: $OUT";; esac
+ok "a heavier fork resolves over TCP (A reorgs to height 5)"
+
+pkill -x ingot 2>/dev/null || true
+sleep 0.2
+
 echo "all $PASS integration checks passed"

@@ -11,6 +11,16 @@
 #include <stdio.h>
 #include <time.h>
 
+/* Append every block that connected since the last call - including
+ * orphans that rode in through the rescan when their parent arrived. */
+static void store_new_blocks(IngotNet *n) {
+    static IngotNode *pend[INGOT_MAX_BLOCKS];   /* static: 16 KB off the event-loop stack */
+    int k = ingot_chain_pending_store(n->chain, pend, INGOT_MAX_BLOCKS);
+    for (int i = 0; i < k; i++)
+        if (ingot_store_append(n->store_path, &pend[i]->b) == 0)
+            pend[i]->stored = 1;
+}
+
 #define NET_MAGIC 0x54474e49u
 #define MSG_HELLO     1
 #define MSG_GETBLOCKS 2
@@ -30,7 +40,8 @@ static int peer_send(IngotNet *n, IngotPeer *p, uint8_t type,
         return -1;
     size_t need = p->wlen + HDR + len;
     if (need > INGOT_PEER_WMAX)
-        return -1;   /* slow peer: the caller drops it */
+        return -1;   /* slow peer: the queue is capped; new messages
+                    * are dropped until the socket drains */
     if (need > p->wcap) {
         size_t cap = p->wcap ? p->wcap : WBUF_INIT;
         while (cap < need)
@@ -144,7 +155,6 @@ static void handle_msg(IngotNet *n, int pi, uint8_t type,
             fprintf(stderr, "[net] block from peer %d: %s (tip %d)\n",
                     pi, ingot_err_str(e), ingot_chain_height(n->chain));
         if (e == INGOT_OK) {
-            ingot_store_append(n->store_path, b);
             broadcast(n, pi, MSG_BLOCK, pl, len);
             /* still behind? ask for more */
             const IngotNode *tip = ingot_chain_tip(n->chain);
@@ -153,8 +163,15 @@ static void handle_msg(IngotNet *n, int pi, uint8_t type,
             if (memcmp(tip->hash, bh, 32) != 0)
                 request_sync(n, p);
         } else if (e == INGOT_ERR_ORPHAN) {
-            request_sync(n, p);
+            /* The missing parent is below our tip: syncing from our own
+             * height can never reach the junction of a heavier fork, so
+             * ask further back. Duplicates are cheap; the first divergent
+             * block connects as a side branch and, once heavier, reorgs. */
+            int h = ingot_chain_height(n->chain);
+            uint32_t from = h + 1 > 32 ? (uint32_t)(h - 31) : 0;
+            peer_send(n, p, MSG_GETBLOCKS, &from, 4);
         }
+        store_new_blocks(n);
         free(b);
         break;
     }
@@ -387,7 +404,7 @@ void ingot_net_run(IngotNet *n) {
                 if (ingot_chain_add(n->chain, tmpl) == INGOT_OK) {
                     fprintf(stderr, "[mine] block %d (%d tx)\n",
                             ingot_chain_height(n->chain), tmpl->n_tx);
-                    ingot_store_append(n->store_path, tmpl);
+                    store_new_blocks(n);
                     static unsigned char buf[INGOT_MAX_BLOCK_SIZE];
                     size_t len = ingot_block_serialize(tmpl, buf, sizeof buf);
                     if (len)

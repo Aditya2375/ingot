@@ -6,10 +6,10 @@ cd "$(dirname "$0")/.."
 fail() { echo "check-docs: $1" >&2; exit 1; }
 
 UNIT=$(./build/test-unit | tail -1 | grep -o '^[0-9]*')
-[ "$UNIT" = "83" ] || fail "unit checks: README says 83, binary says $UNIT"
-grep -q "83 unit checks" README.md || fail "README no longer says 83 unit checks"
+[ "$UNIT" = "85" ] || fail "unit checks: README says 83, binary says $UNIT"
+grep -q "85 unit checks" README.md || fail "README no longer says 85 unit checks"
 
-grep -q "6 integration checks" README.md || fail "README no longer says 6 integration checks"
+grep -q "7 integration checks" README.md || fail "README no longer says 6 integration checks"
 N=$(grep -c '^    ok(' tests/wasm-smoke.js)
 [ "$N" = "11" ] || fail "wasm smoke has $N checks, expected 11"
 

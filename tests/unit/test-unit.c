@@ -447,6 +447,30 @@ int main(void) {
               "an overpaying coinbase is rejected");
         CHECK(ingot_chain_height(c) == 3, "a rejected block does not move the tip");
 
+        /* two transactions in one block spending the same coinbase: each
+         * passes the pre-block UTXO lookup, but only one may spend it */
+        IngotTx d1, d2;
+        memset(&d1, 0, sizeof d1);
+        d1.n_in = 1;
+        d1.n_out = 1;
+        memcpy(d1.in[0].prev_txid, cb2, 32);
+        d1.out[0].amount = 1 * INGOT_COIN;
+        memcpy(d1.out[0].addr, baddr, INGOT_ADDR_HASH_LEN);
+        ingot_tx_sign(&d1, 0, wseed);
+        d2 = d1;
+        d2.out[0].amount = 2 * INGOT_COIN;
+        ingot_tx_sign(&d2, 0, wseed);
+        IngotBlock bdbl;
+        mkblock(&bdbl, 4, ingot_chain_tip(c)->hash, waddr,
+                ingot_subsidy(4) + 97 * INGOT_COIN, ++t);
+        bdbl.tx[1] = d1;
+        bdbl.tx[2] = d2;
+        bdbl.n_tx = 3;
+        grind(&bdbl);
+        CHECK(ingot_chain_add(c, &bdbl) == INGOT_ERR_DBLSPEND,
+              "two spends of one outpoint in a block are rejected");
+        CHECK(ingot_chain_height(c) == 3, "the double-spend block does not move the tip");
+
         /* a fork from block 1 that overtakes the main chain */
         unsigned char faddr[INGOT_ADDR_HASH_LEN];
         memset(faddr, 9, INGOT_ADDR_HASH_LEN);

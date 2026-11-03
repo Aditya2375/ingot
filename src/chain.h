@@ -3,7 +3,7 @@
  * Consensus parameters (toy scale, chosen so a browser can play):
  *   subsidy 50 coins, halving every 1000 blocks
  *   retarget every 100 blocks, factor-4 clamp, 10 second target spacing
- *   initial bits 0x2000ffff (~2^16 expected hashes)
+ *   initial bits 0x2000ffff (~2^8, about 256 hashes)
  *   most cumulative work wins; the UTXO set is rebuilt from genesis on
  *   every reorg (O(chain), simple and obviously correct)
  *
@@ -51,6 +51,7 @@ typedef struct {
     int main;                   /* on the active chain */
     int orphan;                 /* parent unknown */
     int invalid;                /* failed validation once */
+    int stored;                 /* written to the block store */
 } IngotNode;
 
 typedef struct {
@@ -99,6 +100,11 @@ IngotErr ingot_chain_add(IngotChain *c, const IngotBlock *b);
 
 int ingot_chain_height(const IngotChain *c);            /* -1 impossible */
 const IngotNode *ingot_chain_tip(const IngotChain *c);
+/* Connected blocks never yet marked stored, in height order. A block
+ * can connect deep inside add() via the orphan rescan, so persistence
+ * asks the chain what is new instead of assuming the just-added block
+ * is the only one. The caller sets node->stored after writing it. */
+int ingot_chain_pending_store(IngotChain *c, IngotNode **out, int max);
 const IngotNode *ingot_chain_find(const IngotChain *c, const unsigned char hash[32]);
 
 const IngotUtxo *ingot_chain_utxo(const IngotChain *c,

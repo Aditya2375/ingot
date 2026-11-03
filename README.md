@@ -49,7 +49,7 @@ encoded in Bitcoin's compact `bits` form.
 
 - subsidy 50 coins, halving every 1000 blocks
 - difficulty retargets every 100 blocks from the actual timespan, clamped to
-  4x per step, never easier than the start bits `0x2000ffff` (~2^16 hashes)
+  4x per step, never easier than the start bits `0x2000ffff` (~2^8, about 256 hashes)
 - the valid chain is the one with the most cumulative work, computed with
   128-bit integer division - not the longest
 - a heavier fork triggers a reorganization that rebuilds the UTXO set by
@@ -67,7 +67,8 @@ encoded in Bitcoin's compact `bits` form.
 (`HELLO / GETBLOCKS / BLOCK / TX`), an epoll event loop, push gossip: every
 new valid block or transaction is relayed to every peer but the sender.
 A peer that announces a taller tip gets a `GETBLOCKS` from our height;
-orphans trigger the same request. Writes are queued per peer and `EPOLLOUT`
+an orphan backs the request off by 32 blocks so the junction of a
+heavier fork is found below our tip and the reorganizing branch follows. Writes are queued per peer and `EPOLLOUT`
 is armed at queue time - a peer that never speaks still gets its bytes.
 
 **Persistence** (`src/store.c`). Blocks are appended to
@@ -101,7 +102,7 @@ This is a teaching blockchain, not money:
 ## Development
 
 ```sh
-make test            # 83 unit checks (hashes, signatures, PoW, reorgs, mempool)
+make test            # 85 unit checks (hashes, signatures, PoW, reorgs, mempool)
 make sanitize        # the same under ASan/UBSan, plus a fuzz pass
 sh tests/run-tests.sh   # CLI + two-node integration
 python3 tests/fuzz.py   # parser fuzzing
@@ -112,5 +113,5 @@ Layout: `src/` the C core (crypto, transactions, blocks, chain, miner,
 store, net, CLI), `wasm/` the emscripten wrapper, `docs/` the demo page,
 `tests/` unit, integration, fuzz and smoke suites.
 
-83 unit checks, 6 integration checks, all green; CI runs every suite on
+85 unit checks, 7 integration checks, all green; CI runs every suite on
 every push.

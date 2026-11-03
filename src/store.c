@@ -30,6 +30,15 @@ int ingot_store_load(IngotChain *c, const char *path) {
             break;
         }
         IngotErr e = ingot_chain_add(c, b);
+        if (e == INGOT_OK || e == INGOT_ERR_DUP) {
+            /* it is already in the file: do not offer it back for
+             * persistence on the next network block */
+            unsigned char h[32];
+            ingot_block_hash(b, h);
+            const IngotNode *node = ingot_chain_find(c, h);
+            if (node)
+                ((IngotNode *)node)->stored = 1;
+        }
         free(b);
         /* records land out of order when the node synced while a peer
          * pushed broadcasts: orphans connect when their parents arrive
