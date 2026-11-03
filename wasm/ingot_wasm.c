@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
+#include <stdint.h>
 #include "../src/chain.h"
 #include "../src/miner.h"
 #include "../src/keys.h"
@@ -40,6 +42,7 @@ int w_init(unsigned s0, unsigned s1) {
 
 EMSCRIPTEN_KEEPALIVE
 const char *w_address(int node) {
+    if (node < 0 || node > 1 || !nodes[node]) return "invalid demo node";
     static char addr[2][64];
     unsigned char pk[32];
     ed25519_publickey(seeds[node], pk);
@@ -55,6 +58,7 @@ static void addr_of(int node, unsigned char out[INGOT_ADDR_HASH_LEN]) {
 
 EMSCRIPTEN_KEEPALIVE
 const char *w_mine(int node) {
+    if (node < 0 || node > 1 || !nodes[node]) return "{\"ok\":false,\"err\":\"bad node\"}";
     IngotChain *c = nodes[node];
     unsigned char addr[INGOT_ADDR_HASH_LEN];
     addr_of(node, addr);
@@ -83,6 +87,8 @@ const char *w_mine(int node) {
 
 EMSCRIPTEN_KEEPALIVE
 const char *w_send(int from, int to, double amount_coins) {
+    if (from < 0 || from > 1 || to < 0 || to > 1 || !nodes[from] || !nodes[to]) return "{\"ok\":false,\"err\":\"bad node\"}";
+    if (!isfinite(amount_coins) || amount_coins <= 0 || amount_coins > 1000000) return "{\"ok\":false,\"err\":\"bad amount\"}";
     IngotChain *c = nodes[from];
     uint64_t amount = (uint64_t)(amount_coins * (double)INGOT_COIN + 0.5);
     if (amount == 0 || amount_coins <= 0)
@@ -163,7 +169,8 @@ static int sync_one(IngotChain *src, IngotChain *dst, int *reorged) {
     /* mempool follows the blocks */
     for (int i = 0; i < src->n_mempool; i++)
         ingot_mempool_add(dst, &src->mempool[i].tx);
-    *reorged = memcmp(old_tip, ingot_chain_tip(dst)->hash, 32) != 0 && moved > 0;
+    const IngotNode *old = ingot_chain_find(dst, old_tip);
+    *reorged = moved > 0 && old && !old->main;
     return moved;
 }
 
@@ -181,6 +188,7 @@ const char *w_sync(void) {
 
 EMSCRIPTEN_KEEPALIVE
 const char *w_state(int node) {
+    if (node < 0 || node > 1 || !nodes[node]) return "{\"ok\":false,\"err\":\"bad node\"}";
     IngotChain *c = nodes[node];
     unsigned char addr[INGOT_ADDR_HASH_LEN];
     addr_of(node, addr);
@@ -215,6 +223,7 @@ const char *w_state(int node) {
  * chain must reject it */
 EMSCRIPTEN_KEEPALIVE
 const char *w_tamper(int node, int height) {
+    if (node < 0 || node > 1 || !nodes[node]) return "{\"ok\":false,\"err\":\"bad node\"}";
     IngotChain *c = nodes[node];
     const IngotNode *n = NULL;
     for (int i = 0; i < c->n_nodes; i++)
