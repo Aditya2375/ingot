@@ -1,0 +1,3 @@
+# ingot
+Educational C blockchain with two browser-local demo nodes. No real value; demo wallet entropy is only 32 bits. Native peer networking is unauthenticated and for isolated trusted networks only.
+Source: https://github.com/Aditya2375/ingot
