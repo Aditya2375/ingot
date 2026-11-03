@@ -5,7 +5,9 @@ cd "$(dirname "$0")/.."
 
 BIN=${BIN:-build/ingot}
 T=$(mktemp -d)
-trap 'pkill -x ingot 2>/dev/null || true; rm -rf "$T"' EXIT
+PIDS=''
+cleanup_nodes() { if [ -n "$PIDS" ]; then kill $PIDS 2>/dev/null || true; wait $PIDS 2>/dev/null || true; PIDS=''; fi; }
+trap 'cleanup_nodes; rm -rf "$T"' EXIT
 PASS=0
 ok() { PASS=$((PASS + 1)); echo "ok $PASS - $1"; }
 die() { echo "not ok - $1" >&2; exit 1; }
@@ -31,8 +33,10 @@ HOME=$T/b $BIN wallet new >/dev/null
 B_ADDR=$(HOME=$T/b $BIN address)
 
 HOME=$T/a $BIN node --port 9511 --mine >$T/nodeA.log 2>&1 &
+PIDS="$PIDS $!"
 sleep 1
 HOME=$T/b $BIN node --port 9512 --peer 127.0.0.1:9511 >$T/nodeB.log 2>&1 &
+PIDS="$PIDS $!"
 sleep 3
 
 OUT=$(HOME=$T/b $BIN balance "$A_ADDR")
@@ -45,7 +49,7 @@ OUT=$(HOME=$T/b $BIN balance)
 case $OUT in "5.0 INGOT"*) ;; *) die "B balance after send: $OUT";; esac
 ok "signed send relays, mines and lands on the other node"
 
-pkill -x ingot 2>/dev/null || true
+cleanup_nodes
 sleep 0.2
 
 # --- persistence: a fresh process replays the store ---
@@ -59,15 +63,17 @@ HOME=$T/fa $BIN mine 3 >/dev/null
 HOME=$T/fb $BIN mine 5 >/dev/null
 
 HOME=$T/fa $BIN node --port 9521 >$T/forkA.log 2>&1 &
+PIDS="$PIDS $!"
 sleep 1
 HOME=$T/fb $BIN node --port 9522 --peer 127.0.0.1:9521 >$T/forkB.log 2>&1 &
+PIDS="$PIDS $!"
 sleep 3
 
 OUT=$(HOME=$T/fa $BIN balance)
 case $OUT in *"(height 5)"*) ;; *) die "heavier fork did not resolve over TCP: $OUT";; esac
 ok "a heavier fork resolves over TCP (A reorgs to height 5)"
 
-pkill -x ingot 2>/dev/null || true
+cleanup_nodes
 sleep 0.2
 
 echo "all $PASS integration checks passed"
