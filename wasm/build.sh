@@ -13,3 +13,6 @@ emcc -O2 -Isrc \
 
 # Keep the stable loader URL; version the corrected binary without removing the old asset.
 mv docs/3-ingot-v2.js docs/ingot.js
+
+# Generated browser data is not executable; normalize its mode for exact CI comparison.
+chmod 644 docs/3-ingot-v2.wasm docs/ingot.js
