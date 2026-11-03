@@ -5,6 +5,9 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Educational C blockchain lab: two local simulated nodes, mining, signed transactions and fork resolution. No real money or wallets.">
+<meta name="theme-color" content="#0d1117"><meta name="referrer" content="no-referrer"><link rel="canonical" href="https://aditya2375.github.io/ingot/">
+<meta property="og:title" content="ingot / C blockchain lab"><meta property="og:description" content="Two local demo nodes. Educational only, no real coins."><meta property="og:type" content="website"><meta property="og:url" content="https://aditya2375.github.io/ingot/">
 <title>ingot - a tiny blockchain, live in your browser</title>
 <style>
   :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
@@ -46,6 +49,8 @@
   .log .ok { color:var(--ok); } .log .bad { color:var(--bad); } .log .dim { color:var(--dim); }
   footer { padding:0 24px 30px; color:var(--dim); font-size:13px; }
   a { color:var(--a); }
+  .node { min-width:0; } button { min-height:44px; } :focus-visible { outline:2px solid var(--a);outline-offset:3px; }
+  @media(max-width:480px) { main,header { padding-left:16px;padding-right:16px; } .blk { font-size:11px;gap:4px; } }
 </style>
 </head>
 <body>
@@ -53,14 +58,14 @@
   <h1>ingot</h1>
   <p class="sub">Two independent nodes running the real consensus code, compiled to WebAssembly.
      Create wallets, mine blocks, send coins, cut the link to fork the chain, then sync and watch
-     the most-work rule reorganize the shorter branch. Everything runs locally - the same
+     the most-work rule reorganize the shorter branch. Demo coins have no value. Wallet seeds have only 32 bits of entropy and must never be reused for real assets. Reloading discards all state. Everything runs locally - the same
      <code>chain.c</code> the native node uses.
      <a href="https://github.com/Aditya2375/ingot">source</a></p>
 </header>
 <main>
   <div class="bar">
     <label class="switch"><input type="checkbox" id="link" checked> linked (gossip after every block)</label>
-    <button id="sync">sync now</button>
+    <button disabled id="sync">sync now</button>
     <span id="net" class="dim"></span>
   </div>
   <div class="nodes">
@@ -72,10 +77,10 @@
         <div class="stat"><b id="mpA">0</b><span>mempool</span></div>
       </div>
       <div class="ctl">
-        <button data-mine="0">mine</button>
-        <input type="number" id="amtA" min="1" step="1" value="10">
-        <button data-send="0">send to B</button>
-        <button data-tamper="0">forge an old block</button>
+        <button disabled data-mine="0">mine</button>
+        <input type="number" aria-label="Demo coins to send to B" id="amtA" min="1" max="1000000" step="1" value="10">
+        <button disabled data-send="0">send to B</button>
+        <button disabled data-tamper="0">forge an old block</button>
       </div>
       <div class="blocks" id="blocksA"></div>
     </div>
@@ -87,17 +92,17 @@
         <div class="stat"><b id="mpB">0</b><span>mempool</span></div>
       </div>
       <div class="ctl">
-        <button data-mine="1">mine</button>
-        <input type="number" id="amtB" min="1" step="1" value="10">
-        <button data-send="1">send to A</button>
-        <button data-tamper="1">forge an old block</button>
+        <button disabled data-mine="1">mine</button>
+        <input type="number" aria-label="Demo coins to send to A" id="amtB" min="1" max="1000000" step="1" value="10">
+        <button disabled data-send="1">send to A</button>
+        <button disabled data-tamper="1">forge an old block</button>
       </div>
       <div class="blocks" id="blocksB"></div>
     </div>
   </div>
-  <div class="log" id="log"></div>
+  <div class="log" id="log" role="status" aria-live="polite"></div>
 </main>
-<footer>blockchain #14 in a build-your-own-X series - proof of work, UTXO, Ed25519, compact-target difficulty, reorgs.</footer>
+<footer>Educational, unaudited code. Browser mining runs on the main thread and can briefly pause the page; no background mining or real network peers. The native CLI listens on all interfaces and has no peer authentication: use only on a trusted isolated network. <a href="https://github.com/Aditya2375/ingot/issues">Report an issue</a>. blockchain #14 in a build-your-own-X series - proof of work, UTXO, Ed25519, compact-target difficulty, reorgs.</footer>
 <script src="ingot.js"></script>
 <script src="app.js"></script>
 </body>
