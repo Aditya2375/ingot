@@ -20,7 +20,22 @@ build/test-unit: tests/unit/test-unit.c $(CORE) $(HDRS) | build
 test: build/test-unit
 	./build/test-unit
 
+build/ingot: src/main.c $(CORE) src/store.c src/net.c $(HDRS) | build
+	$(CC) $(CFLAGS) $(WARN) $(EXTRA) src/main.c $(CORE) src/store.c src/net.c -o $@ -lm
+
+build/test-fuzz: tests/fuzz/fuzz-driver.c $(CORE) $(HDRS) | build
+	$(CC) $(CFLAGS) $(WARN) $(EXTRA) tests/fuzz/fuzz-driver.c $(CORE) -o $@ -lm
+
+sanitize: EXTRA=-fsanitize=address,undefined,float-cast-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer
+sanitize: clean build/test-unit build/test-fuzz
+	./build/test-unit
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tests/fuzz.py --blobs 60
+
+wasm:
+	sh wasm/build.sh
+	node tests/wasm-smoke.js
+
 clean:
 	rm -rf build
 
-.PHONY: all test clean
+.PHONY: all test sanitize wasm clean

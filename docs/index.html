@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ingot - a tiny blockchain, live in your browser</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
+          --a:#58a6ff; --b:#f0883e; --ok:#3fb950; --bad:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { padding:20px 24px 8px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--dim); max-width:720px; }
+  .sub code { color:var(--fg); }
+  main { padding:16px 24px 40px; }
+  .bar { display:flex; gap:12px; align-items:center; margin:8px 0 16px; flex-wrap:wrap; }
+  button { background:#21262d; color:var(--fg); border:1px solid var(--line);
+           border-radius:6px; padding:6px 14px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--dim); }
+  button:disabled { opacity:.45; cursor:default; }
+  .switch { display:flex; gap:8px; align-items:center; color:var(--dim); }
+  .nodes { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:900px){ .nodes{grid-template-columns:1fr;} }
+  .node { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .node h2 { margin:0 0 2px; font-size:17px; }
+  .na h2 { color:var(--a); } .nb h2 { color:var(--b); }
+  .addr { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:var(--dim);
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stats { display:flex; gap:18px; margin:10px 0; flex-wrap:wrap; }
+  .stat b { display:block; font-size:18px; }
+  .stat span { color:var(--dim); font-size:12px; }
+  .ctl { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; align-items:center; }
+  input[type=number] { width:90px; background:#0d1117; border:1px solid var(--line);
+           color:var(--fg); border-radius:6px; padding:6px 8px; font:inherit; }
+  .blocks { margin-top:10px; border-top:1px solid var(--line); max-height:220px; overflow-y:auto; }
+  .blk { display:flex; justify-content:space-between; gap:8px; padding:5px 2px;
+         border-bottom:1px solid #21262d; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .blk .h { color:var(--dim); }
+  .log { margin-top:16px; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:12px 16px; height:170px; overflow-y:auto;
+         font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .log .ok { color:var(--ok); } .log .bad { color:var(--bad); } .log .dim { color:var(--dim); }
+  footer { padding:0 24px 30px; color:var(--dim); font-size:13px; }
+  a { color:var(--a); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ingot</h1>
+  <p class="sub">Two independent nodes running the real consensus code, compiled to WebAssembly.
+     Create wallets, mine blocks, send coins, cut the link to fork the chain, then sync and watch
+     the most-work rule reorganize the shorter branch. Everything runs locally - the same
+     <code>chain.c</code> the native node uses.
+     <a href="https://github.com/Aditya2375/ingot">source</a></p>
+</header>
+<main>
+  <div class="bar">
+    <label class="switch"><input type="checkbox" id="link" checked> linked (gossip after every block)</label>
+    <button id="sync">sync now</button>
+    <span id="net" class="dim"></span>
+  </div>
+  <div class="nodes">
+    <div class="node na" id="nodeA">
+      <h2>node A</h2><div class="addr" id="addrA"></div>
+      <div class="stats">
+        <div class="stat"><b id="balA">0</b><span>INGOT</span></div>
+        <div class="stat"><b id="hA">0</b><span>height</span></div>
+        <div class="stat"><b id="mpA">0</b><span>mempool</span></div>
+      </div>
+      <div class="ctl">
+        <button data-mine="0">mine</button>
+        <input type="number" id="amtA" min="1" step="1" value="10">
+        <button data-send="0">send to B</button>
+        <button data-tamper="0">forge an old block</button>
+      </div>
+      <div class="blocks" id="blocksA"></div>
+    </div>
+    <div class="node nb" id="nodeB">
+      <h2>node B</h2><div class="addr" id="addrB"></div>
+      <div class="stats">
+        <div class="stat"><b id="balB">0</b><span>INGOT</span></div>
+        <div class="stat"><b id="hB">0</b><span>height</span></div>
+        <div class="stat"><b id="mpB">0</b><span>mempool</span></div>
+      </div>
+      <div class="ctl">
+        <button data-mine="1">mine</button>
+        <input type="number" id="amtB" min="1" step="1" value="10">
+        <button data-send="1">send to A</button>
+        <button data-tamper="1">forge an old block</button>
+      </div>
+      <div class="blocks" id="blocksB"></div>
+    </div>
+  </div>
+  <div class="log" id="log"></div>
+</main>
+<footer>blockchain #14 in a build-your-own-X series - proof of work, UTXO, Ed25519, compact-target difficulty, reorgs.</footer>
+<script src="ingot.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
