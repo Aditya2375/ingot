@@ -115,3 +115,9 @@ store, net, CLI), `wasm/` the emscripten wrapper, `docs/` the demo page,
 
 85 unit checks, 7 integration checks, all green; CI runs every suite on
 every push.
+
+## Safe demo boundaries
+
+Educational, unaudited code, not a cryptocurrency for real assets. Browser demo coins have no value. Demo wallet seeds have only 32 bits of entropy, and page reload discards state. Do not reuse demo wallets for real assets. Mining is bounded per click but runs on the main thread. Browser amounts are capped at 1,000,000 demo coins and logs at 100 entries.
+
+The native node listens on all interfaces, has no peer authentication, and has no idle-peer timeout. Use only on an isolated trusted network, never expose its port to the Internet. Chain storage is append-only, not crash-atomic or fsync-durable; failed writes now report failure, but a torn tail needs manual recovery before further appends. Native amount parsing rejects uint64 overflow. No consensus-safety claim follows from tests or scans.
