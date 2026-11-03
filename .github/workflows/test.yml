@@ -51,5 +51,11 @@ jobs:
           git checkout -- docs/index.html docs/app.js docs/404.html docs/robots.txt docs/sitemap.xml docs/llms.txt docs/ingot.wasm
           sh wasm/build.sh
       - run: node tests/wasm-smoke.js
+      - name: preserve rebuilt binary for reproducibility diagnosis
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ingot-rebuilt-wasm
+          path: docs/3-ingot-v2.wasm
+          retention-days: 1
       - name: committed demo matches a fresh build
         run: git diff --exit-code --stat docs/
