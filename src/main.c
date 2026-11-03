@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include "chain.h"
 #include "miner.h"
 #include "store.h"
@@ -127,12 +128,22 @@ static int cmd_wallet_new(void) {
         return 1;
     }
     if (fd >= 0) close(fd);
-    FILE *f = fopen(wallet_path, "w");
-    if (!f) {
-        perror("wallet");
+    /* O_EXCL: overwriting an existing wallet would destroy the keys.
+     * 0600 at creation: no window where the seed is group/world-readable. */
+    int wfd = open(wallet_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (wfd < 0) {
+        if (errno == EEXIST)
+            fprintf(stderr, "wallet already exists: %s\n", wallet_path);
+        else
+            perror("wallet");
         return 1;
     }
-    chmod(wallet_path, 0600);
+    FILE *f = fdopen(wfd, "w");
+    if (!f) {
+        perror("wallet");
+        close(wfd);
+        return 1;
+    }
     char h[65];
     hex(seed, 32, h);
     fprintf(f, "%s\n", h);

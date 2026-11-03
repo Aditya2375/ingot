@@ -27,8 +27,14 @@
       for (const b of s.blocks.slice().reverse()) {
         const row = document.createElement("div");
         row.className = "blk";
-        row.innerHTML = "<span class='h'>#" + b.height + "</span><span>" + b.hash +
-                        "...</span><span>" + b.txs + " tx</span>";
+        const h = document.createElement("span");
+        h.className = "h";
+        h.textContent = "#" + b.height;
+        const hash = document.createElement("span");
+        hash.textContent = b.hash + "...";
+        const txs = document.createElement("span");
+        txs.textContent = b.txs + " tx";
+        row.append(h, hash, txs);
         bl.appendChild(row);
       }
     }
